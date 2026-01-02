@@ -3,4 +3,4 @@ enableCORS = false
 enableXsrfProtection = false
 
 [run]
-pythonVersion = "3.11"
+pythonVersion = "3.10"
