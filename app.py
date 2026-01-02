@@ -6,8 +6,8 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 from langchain.chains import RetrievalQA
 
-st.set_page_config(page_title="Consultor CCT IMSS", layout="wide")
-st.title("🤖 Asistente CCT y Estatutos IMSS")
+st.set_page_config(page_title="Consultor IMSS", layout="wide")
+st.title("🤖 Asistente CCT IMSS")
 
 with st.sidebar:
     key = st.text_input("Groq API Key:", type="password")
@@ -17,8 +17,8 @@ if files and key:
     try:
         docs = []
         for f in files:
-            with open(f.name, "wb") as temp:
-                temp.write(f.getbuffer())
+            with open(f.name, "wb") as t:
+                t.write(f.getbuffer())
             loader = PyPDFLoader(f.name)
             docs.extend(loader.load())
 
@@ -29,10 +29,9 @@ if files and key:
         db = FAISS.from_documents(chunks, embeds)
 
         llm = ChatGroq(groq_api_key=key, model_name="llama3-70b-8192", temperature=0)
-        
         qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=db.as_retriever())
 
-        pregunta = st.text_input("¿Qué deseas consultar?")
+        pregunta = st.text_input("Pregunta algo sobre el CCT:")
         if pregunta:
             res = qa.invoke({"query": pregunta})
             st.info(res["result"])
