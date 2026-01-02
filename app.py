@@ -1,58 +1,94 @@
 import streamlit as st
-import os
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_groq import ChatGroq
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_groq import ChatGroq
 from langchain.chains import RetrievalQA
+from langchain.schema import Document
+from pypdf import PdfReader
+import tempfile
+import os
 
-st.set_page_config(page_title="Consultor CCT IMSS-SNTSS", layout="wide")
-st.title("🤖 Asistente Experto en CCT y Estatutos IMSS")
-st.markdown("---")
+# Configuración básica de la página
+st.set_page_config(page_title="Asistente IMSS - CCT y Estatutos", layout="wide")
+st.title("🤖 Asistente Experto en el CCT y Estatutos del IMSS")
+st.markdown("Sube documentos oficiales del IMSS (PDF) y haz preguntas sobre ellos.")
 
-with st.sidebar:
-    st.header("Configuración")
-    api_key = st.text_input("Introduce tu Groq API Key:", type="password")
-    uploaded_files = st.file_uploader("Sube los archivos PDF (CCT/Estatutos)", accept_multiple_files=True, type="pdf")
+# === INGRESO DE LA API KEY ===
+groq_api_key = st.sidebar.text_input("🔑 Clave API de Groq", type="password", help="Obtén tu clave en https://console.groq.com/")
 
-if uploaded_files and api_key:
-    try:
-        with st.status("Procesando documentos..."):
+# === CARGA DE PDFs ===
+uploaded_files = st.file_uploader("📂 Sube uno o varios PDFs del IMSS", type=["pdf"], accept_multiple_files=True)
+
+# === INICIALIZACIÓN DEL VECTORSTORE EN SESSION STATE ===
+if "vectorstore" not in st.session_state:
+    st.session_state.vectorstore = None
+
+# === PROCESAMIENTO DE PDFs ===
+if uploaded_files and groq_api_key:
+    with st.spinner("Procesando documentos..."):
+        try:
             all_docs = []
-            for uploaded_file in uploaded_files:
-                temp_file = f"temp_{uploaded_file.name}"
-                with open(temp_file, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                
-                loader = PyPDFLoader(temp_file)
-                all_docs.extend(loader.load())
-                os.remove(temp_file)
+            for file in uploaded_files:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    tmp.write(file.getvalue())
+                    tmp_path = tmp.name
 
-            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-            chunks = text_splitter.split_documents(all_docs)
+                reader = PdfReader(tmp_path)
+                text = ""
+                for page in reader.pages:
+                    text += page.extract_text() or ""
+                os.unlink(tmp_path)  # Eliminar archivo temporal
 
-            embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-            vector_store = FAISS.from_documents(chunks, embeddings)
+                if text.strip():
+                    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+                    chunks = splitter.split_text(text)
+                    all_docs.extend([Document(page_content=chunk) for chunk in chunks])
 
-            llm = ChatGroq(groq_api_key=api_key, model_name="llama3-70b-8192", temperature=0)
+            if not all_docs:
+                st.warning("⚠️ No se extrajo texto de los PDFs. Verifica que no estén escaneados o vacíos.")
+            else:
+                # Embeddings (ligeros y sin internet)
+                embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+                # Crear base vectorial en memoria
+                st.session_state.vectorstore = FAISS.from_documents(all_docs, embeddings)
+                st.success(f"✅ Procesados {len(all_docs)} fragmentos de texto.")
+        except Exception as e:
+            st.error(f"❌ Error al procesar los PDFs: {str(e)}")
 
-            qa_chain = RetrievalQA.from_chain_type(
-                llm=llm,
-                chain_type="stuff",
-                retriever=vector_store.as_retriever()
-            )
+# === INTERFAZ DE PREGUNTAS ===
+st.divider()
+user_question = st.text_input("💬 ¿Qué deseas saber del CCT o Estatutos del IMSS?")
 
-        st.success("¡Documentos listos!")
-        user_question = st.text_input("Escribe tu duda:")
-        
-        if user_question:
-            with st.spinner("Buscando..."):
+if st.button("Enviar pregunta"):
+    if not groq_api_key:
+        st.error("⚠️ Por favor, ingresa tu clave API de Groq en el panel lateral.")
+    elif not st.session_state.vectorstore:
+        st.error("⚠️ Primero sube al menos un PDF para consultar.")
+    elif not user_question.strip():
+        st.warning("⚠️ Escribe una pregunta antes de enviar.")
+    else:
+        try:
+            with st.spinner("Pensando..."):
+                llm = ChatGroq(
+                    groq_api_key=groq_api_key,
+                    model_name="llama3-70b-8192",
+                    temperature=0.2,
+                    max_tokens=1024
+                )
+                qa_chain = RetrievalQA.from_chain_type(
+                    llm=llm,
+                    chain_type="stuff",
+                    retriever=st.session_state.vectorstore.as_retriever(search_kwargs={"k": 5}),
+                    return_source_documents=False
+                )
                 response = qa_chain.invoke({"query": user_question})
-                st.write("### Respuesta:")
-                st.info(response["result"])
+                st.markdown("### 📌 Respuesta:")
+                st.write(response["result"])
+        except Exception as e:
+            st.error(f"❌ Error al generar la respuesta: {str(e)}")
+            st.info("💡 ¿Olvidaste activar tu clave API o el modelo está temporalmente no disponible?")
 
-    except Exception as e:
-        st.error(f"Error: {e}")
-else:
-    st.warning("👈 Ingresa tu API Key y sube un PDF.")
+# === Nota de pie ===
+st.divider()
+st.caption("🔒 Tu clave API nunca se almacena. Todo el procesamiento se hace en tiempo real.")
