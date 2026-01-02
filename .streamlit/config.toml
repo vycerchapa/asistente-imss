@@ -1,6 +1,5 @@
-[server]
-enableCORS = false
-enableXsrfProtection = false
+[browser]
+gatherUsageStats = false
 
-[run]
-pythonVersion = "3.10"
+[server]
+runOnSave = false
