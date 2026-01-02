@@ -1,7 +1,7 @@
 streamlit==1.36.0
 langchain==0.2.12
-langchain-groq==0.1.6
-langchain-huggingface==0.1.2
+langchain-groq==0.1.5
+langchain-huggingface==0.0.3
 faiss-cpu>=1.9.0.post1
 pypdf==4.3.1
 python-dotenv==1.0.1
