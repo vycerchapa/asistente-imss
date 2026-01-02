@@ -9,22 +9,30 @@ from pypdf import PdfReader
 import tempfile
 import os
 
-# Configuración básica de la página
+# Configuración de la página
 st.set_page_config(page_title="Asistente IMSS - CCT y Estatutos", layout="wide")
 st.title("🤖 Asistente Experto en el CCT y Estatutos del IMSS")
 st.markdown("Sube documentos oficiales del IMSS (PDF) y haz preguntas sobre ellos.")
 
-# === INGRESO DE LA API KEY ===
-groq_api_key = st.sidebar.text_input("🔑 Clave API de Groq", type="password", help="Obtén tu clave en https://console.groq.com/")
+# === Entrada de API Key ===
+groq_api_key = st.sidebar.text_input(
+    "🔑 Clave API de Groq", 
+    type="password",
+    help="Obtén tu clave en https://console.groq.com/"
+)
 
-# === CARGA DE PDFs ===
-uploaded_files = st.file_uploader("📂 Sube uno o varios PDFs del IMSS", type=["pdf"], accept_multiple_files=True)
+# === Carga de PDFs ===
+uploaded_files = st.file_uploader(
+    "📂 Sube uno o varios PDFs del IMSS", 
+    type=["pdf"], 
+    accept_multiple_files=True
+)
 
-# === INICIALIZACIÓN DEL VECTORSTORE EN SESSION STATE ===
+# === Inicialización del vectorstore en session_state ===
 if "vectorstore" not in st.session_state:
     st.session_state.vectorstore = None
 
-# === PROCESAMIENTO DE PDFs ===
+# === Procesamiento de PDFs ===
 if uploaded_files and groq_api_key:
     with st.spinner("Procesando documentos..."):
         try:
@@ -37,26 +45,30 @@ if uploaded_files and groq_api_key:
                 reader = PdfReader(tmp_path)
                 text = ""
                 for page in reader.pages:
-                    text += page.extract_text() or ""
-                os.unlink(tmp_path)  # Eliminar archivo temporal
+                    extracted = page.extract_text()
+                    if extracted:
+                        text += extracted
+                os.unlink(tmp_path)  # Elimina archivo temporal
 
                 if text.strip():
-                    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+                    splitter = RecursiveCharacterTextSplitter(
+                        chunk_size=1000, 
+                        chunk_overlap=200
+                    )
                     chunks = splitter.split_text(text)
                     all_docs.extend([Document(page_content=chunk) for chunk in chunks])
 
             if not all_docs:
-                st.warning("⚠️ No se extrajo texto de los PDFs. Verifica que no estén escaneados o vacíos.")
+                st.warning("⚠️ No se extrajo texto de los PDFs. Verifica que no estén escaneados.")
             else:
-                # Embeddings (ligeros y sin internet)
-                embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-                # Crear base vectorial en memoria
-                st.session_state.vectorstore = FAISS.from_documents(all_docs, embeddings)
+                with st.spinner("Generando base de conocimiento..."):
+                    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+                    st.session_state.vectorstore = FAISS.from_documents(all_docs, embeddings)
                 st.success(f"✅ Procesados {len(all_docs)} fragmentos de texto.")
         except Exception as e:
             st.error(f"❌ Error al procesar los PDFs: {str(e)}")
 
-# === INTERFAZ DE PREGUNTAS ===
+# === Pregunta del usuario ===
 st.divider()
 user_question = st.text_input("💬 ¿Qué deseas saber del CCT o Estatutos del IMSS?")
 
@@ -89,6 +101,6 @@ if st.button("Enviar pregunta"):
             st.error(f"❌ Error al generar la respuesta: {str(e)}")
             st.info("💡 ¿Olvidaste activar tu clave API o el modelo está temporalmente no disponible?")
 
-# === Nota de pie ===
+# === Pie de página ===
 st.divider()
 st.caption("🔒 Tu clave API nunca se almacena. Todo el procesamiento se hace en tiempo real.")
