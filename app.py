@@ -4,21 +4,18 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
-# Esta es la línea corregida para las nuevas versiones de LangChain:
-from langchain.chains.retrieval_qa.base import RetrievalQA
+from langchain.chains import RetrievalQA
 
 # Configuración de la página
 st.set_page_config(page_title="Consultor CCT IMSS-SNTSS", layout="wide")
 st.title("🤖 Asistente Experto en CCT y Estatutos IMSS")
 
-# Sidebar para configuración
 with st.sidebar:
     api_key = st.text_input("Introduce tu Groq API Key:", type="password")
     uploaded_files = st.file_uploader("Sube los PDF del CCT y Estatutos", accept_multiple_files=True, type="pdf")
 
 if uploaded_files and api_key:
     try:
-        # 1. Procesamiento de documentos
         documents = []
         for uploaded_file in uploaded_files:
             with open(uploaded_file.name, "wb") as f:
@@ -26,29 +23,25 @@ if uploaded_files and api_key:
             loader = PyPDFLoader(uploaded_file.name)
             documents.extend(loader.load())
 
-        # 2. Fragmentación
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         chunks = text_splitter.split_documents(documents)
 
-        # 3. Embeddings
         embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         vector_store = FAISS.from_documents(chunks, embeddings)
 
-        # 4. Modelo Llama 3
         llm = ChatGroq(groq_api_key=api_key, model_name="llama3-70b-8192", temperature=0)
 
-        # 5. Cadena de respuesta
         qa_chain = RetrievalQA.from_chain_type(
             llm=llm,
             chain_type="stuff",
             retriever=vector_store.as_retriever()
         )
 
-        # Interfaz de Chat
-        user_question = st.text_input("Haz una pregunta sobre el contrato o estatutos:")
+        user_question = st.text_input("Haz una pregunta sobre el contrato:")
         if user_question:
-            response = qa_chain.invoke({"query": user_question})
+            # Forma estándar de invocar la cadena
+            response = qa_chain.run(user_question)
             st.write("### Respuesta:")
-            st.info(response["result"])
+            st.info(response)
     except Exception as e:
-        st.error(f"Hubo un error: {e}")
+        st.error(f"Error técnico: {e}")
